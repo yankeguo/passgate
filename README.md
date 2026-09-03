@@ -71,9 +71,9 @@ go build .
 |---|---|
 | `main.go` | Flags/env config (`PASSGATE_*`), graceful shutdown |
 | `server.go` | Routing, auth middleware (JWT cookie → proxy, else redirect to gate), security headers |
-| `gate.go` | WebAuthn ceremonies: register/login begin+finish, per-origin RP instances, in-memory challenges |
+| `gate.go` | WebAuthn ceremonies: register/login begin+finish, RP derived per request origin, in-memory challenges (5 min TTL, single-use) |
 | `session.go` | HS256 JWT issue/verify, `passgate_session` cookie |
-| `store.go` | Single-user state file (`state.json`): signing secret + `webauthn.Credential`, atomic writes |
+| `store.go` | Single-user state file (`state.json`): signing secret + `webauthn.Credential`, atomic writes, one-time registration |
 | `proxy.go` | `httputil.ReverseProxy` to the upstream |
 | `web_tmpl.go` / `web_static.go` | Embedded templates and hashed bundles |
 | `web/src/entries/gate.ts` | Gate page logic via `@simplewebauthn/browser` |

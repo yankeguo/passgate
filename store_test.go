@@ -60,7 +60,7 @@ func TestUserCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u := &user{store: s}
+	u := &owner{store: s}
 	if n := len(u.WebAuthnCredentials()); n != 0 {
 		t.Fatalf("credentials = %d, want 0", n)
 	}
@@ -69,5 +69,23 @@ func TestUserCredentials(t *testing.T) {
 	}
 	if n := len(u.WebAuthnCredentials()); n != 1 {
 		t.Fatalf("credentials = %d, want 1", n)
+	}
+}
+
+func TestSetCredentialRefusesOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	s, err := OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := &webauthn.Credential{ID: []byte("first")}
+	if err := s.SetCredential(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCredential(&webauthn.Credential{ID: []byte("second")}); err == nil {
+		t.Fatal("overwriting a registered credential should fail")
+	}
+	if got := s.Credential(); string(got.ID) != "first" {
+		t.Fatalf("credential = %q, want first", got.ID)
 	}
 }

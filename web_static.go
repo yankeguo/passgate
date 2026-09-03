@@ -51,25 +51,22 @@ func matchAsset(files []string, name, ext string) string {
 	return ""
 }
 
-// jsAsset resolves a bundle entry name ("gate") to its served path
+// assetPath resolves a bundle entry name ("gate") to its served path
 // ("/__passgate/static/gate-1a2b3c4d.js"). When the bundle has not been built
 // it falls back to the unhashed name, which 404s until `bun run build` has
 // run.
-func jsAsset(name string) string {
-	if match := matchAsset(staticFiles, name, "js"); match != "" {
+func assetPath(name, ext string) string {
+	if match := matchAsset(staticFiles, name, ext); match != "" {
 		return "/__passgate/static/" + match
 	}
-	return "/__passgate/static/" + name + ".js"
+	return "/__passgate/static/" + name + "." + ext
 }
 
-// cssAsset is the stylesheet counterpart of jsAsset
-// ("/__passgate/static/main-1a2b3c4d.css").
-func cssAsset(name string) string {
-	if match := matchAsset(staticFiles, name, "css"); match != "" {
-		return "/__passgate/static/" + match
-	}
-	return "/__passgate/static/" + name + ".css"
-}
+// jsAsset is the assetPath template func for script bundles.
+func jsAsset(name string) string { return assetPath(name, "js") }
+
+// cssAsset is the assetPath template func for stylesheet bundles.
+func cssAsset(name string) string { return assetPath(name, "css") }
 
 // staticHandler serves the embedded bundles. Hashed names are immutable, so
 // responses are cached aggressively (overriding the global no-store header).

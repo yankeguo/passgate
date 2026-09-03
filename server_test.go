@@ -45,7 +45,7 @@ func TestUnauthenticatedRedirectsToGate(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("status = %d, want 302", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/passgate/?next=%2Fsome%2Fpage%3Fx%3D1" {
+	if loc := resp.Header.Get("Location"); loc != "/__passgate/?next=%2Fsome%2Fpage%3Fx%3D1" {
 		t.Fatalf("Location = %q", loc)
 	}
 }
@@ -53,7 +53,7 @@ func TestUnauthenticatedRedirectsToGate(t *testing.T) {
 func TestGatePageAndHealthz(t *testing.T) {
 	srv, _ := testServer(t)
 
-	resp, err := http.Get(srv.URL + "/healthz")
+	resp, err := http.Get(srv.URL + "/__passgate/healthz")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestGatePageAndHealthz(t *testing.T) {
 		t.Fatalf("healthz status = %d", resp.StatusCode)
 	}
 
-	resp, err = http.Get(srv.URL + "/passgate/")
+	resp, err = http.Get(srv.URL + "/__passgate/")
 	if err != nil {
 		t.Fatal(err)
 	}

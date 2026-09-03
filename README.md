@@ -4,7 +4,7 @@ A single-user PassKey gate that adds authentication to any web service — first
 
 Many self-hosted tools ship a web UI with no authentication, leaving you to bolt on something like Caddy basic auth — which means another password to remember and a dialog most password managers won't fill. Passgate replaces that with WebAuthn: a reverse proxy that intercepts every request until a PassKey ceremony succeeds, then keeps you signed in with a JWT cookie.
 
-- **First visit registers** — with no credential on file, the gate page offers a one-click PassKey registration (`/passgate/`).
+- **First visit registers** — with no credential on file, the gate page offers a one-click PassKey registration (`/__passgate/`). All of passgate's own paths (gate page, API, assets, health check) live under the `/__passgate/` prefix so nothing collides with the upstream's routes.
 - **Every visit after requires it** — once registered, the gate demands an assertion from that key. On success it sets an HttpOnly JWT cookie (HS256, default 7 days) and proxies you through.
 - **Authenticated requests are proxied** to the upstream service with `net/http/httputil` (WebSocket-friendly).
 - **Single-file state** — the credential and the JWT signing secret live in `$PASSGATE_DATA_DIR/state.json`. There is exactly one user.

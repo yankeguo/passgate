@@ -18,16 +18,18 @@ func NewServer(gate *Gate, proxy http.Handler) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// Security headers (CSP, no-store, ...) apply ONLY to passgate's own
-	// surface: the gate page, its API and its assets. Proxied responses are
-	// passed through untouched — the upstream owns its headers.
-	mux.Handle("GET /healthz", s.withSecurityHeaders(http.HandlerFunc(s.handleHealthz)))
-	mux.Handle("GET /passgate/{$}", s.withSecurityHeaders(http.HandlerFunc(s.gate.handlePage)))
-	mux.Handle("POST /passgate/api/register/begin", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleRegisterBegin)))
-	mux.Handle("POST /passgate/api/register/finish", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleRegisterFinish)))
-	mux.Handle("POST /passgate/api/login/begin", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleLoginBegin)))
-	mux.Handle("POST /passgate/api/login/finish", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleLoginFinish)))
-	mux.Handle("GET /static/", s.withSecurityHeaders(staticHandler()))
+	// Everything passgate owns lives under /__passgate/ so no common path
+	// (/static, /healthz, ...) is taken away from the upstream.
+	// Security headers (CSP, no-store, ...) apply ONLY to this surface;
+	// proxied responses are passed through untouched — the upstream owns
+	// its headers.
+	mux.Handle("GET /__passgate/healthz", s.withSecurityHeaders(http.HandlerFunc(s.handleHealthz)))
+	mux.Handle("GET /__passgate/{$}", s.withSecurityHeaders(http.HandlerFunc(s.gate.handlePage)))
+	mux.Handle("POST /__passgate/api/register/begin", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleRegisterBegin)))
+	mux.Handle("POST /__passgate/api/register/finish", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleRegisterFinish)))
+	mux.Handle("POST /__passgate/api/login/begin", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleLoginBegin)))
+	mux.Handle("POST /__passgate/api/login/finish", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleLoginFinish)))
+	mux.Handle("GET /__passgate/static/", s.withSecurityHeaders(staticHandler()))
 	mux.Handle("/", s.withAuth(s.proxy))
 	return mux
 }
@@ -37,7 +39,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) withAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.gate.authed(r) {
-			http.Redirect(w, r, "/passgate/?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
+			http.Redirect(w, r, "/__passgate/?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 			return
 		}
 		next.ServeHTTP(w, r)

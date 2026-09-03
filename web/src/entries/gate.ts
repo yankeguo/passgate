@@ -1,5 +1,5 @@
 // Gate page entry: drives the PassKey registration (first visit) and
-// authentication ceremonies against /passgate/api/*.
+// authentication ceremonies against /__passgate/api/*.
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 
 const body = document.body
@@ -37,13 +37,13 @@ async function post(url: string, payload?: unknown): Promise<Response> {
 
 async function run() {
   if (registered) {
-    const begin = await (await post('/passgate/api/login/begin')).json()
+    const begin = await (await post('/__passgate/api/login/begin')).json()
     const assertion = await startAuthentication({ optionsJSON: begin.publicKey })
-    await post('/passgate/api/login/finish', assertion)
+    await post('/__passgate/api/login/finish', assertion)
   } else {
-    const begin = await (await post('/passgate/api/register/begin')).json()
+    const begin = await (await post('/__passgate/api/register/begin')).json()
     const attestation = await startRegistration({ optionsJSON: begin.publicKey })
-    await post('/passgate/api/register/finish', attestation)
+    await post('/__passgate/api/register/finish', attestation)
   }
   window.location.href = next
 }

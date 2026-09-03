@@ -51,28 +51,30 @@ func matchAsset(files []string, name, ext string) string {
 	return ""
 }
 
-// jsAsset resolves a bundle entry name ("home") to its served path
-// ("/static/home-1a2b3c4d.js"). When the bundle has not been built it falls
-// back to the unhashed name, which 404s until `bun run build` has run.
+// jsAsset resolves a bundle entry name ("gate") to its served path
+// ("/__passgate/static/gate-1a2b3c4d.js"). When the bundle has not been built
+// it falls back to the unhashed name, which 404s until `bun run build` has
+// run.
 func jsAsset(name string) string {
 	if match := matchAsset(staticFiles, name, "js"); match != "" {
-		return "/static/" + match
+		return "/__passgate/static/" + match
 	}
-	return "/static/" + name + ".js"
+	return "/__passgate/static/" + name + ".js"
 }
 
-// cssAsset is the stylesheet counterpart of jsAsset ("/static/main-1a2b3c4d.css").
+// cssAsset is the stylesheet counterpart of jsAsset
+// ("/__passgate/static/main-1a2b3c4d.css").
 func cssAsset(name string) string {
 	if match := matchAsset(staticFiles, name, "css"); match != "" {
-		return "/static/" + match
+		return "/__passgate/static/" + match
 	}
-	return "/static/" + name + ".css"
+	return "/__passgate/static/" + name + ".css"
 }
 
 // staticHandler serves the embedded bundles. Hashed names are immutable, so
 // responses are cached aggressively (overriding the global no-store header).
 func staticHandler() http.Handler {
-	files := http.StripPrefix("/static/", http.FileServerFS(staticDir()))
+	files := http.StripPrefix("/__passgate/static/", http.FileServerFS(staticDir()))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		files.ServeHTTP(w, r)

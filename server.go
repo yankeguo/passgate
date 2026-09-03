@@ -18,15 +18,18 @@ func NewServer(gate *Gate, proxy http.Handler) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("GET /passgate/{$}", s.gate.handlePage)
-	mux.HandleFunc("POST /passgate/api/register/begin", s.gate.handleRegisterBegin)
-	mux.HandleFunc("POST /passgate/api/register/finish", s.gate.handleRegisterFinish)
-	mux.HandleFunc("POST /passgate/api/login/begin", s.gate.handleLoginBegin)
-	mux.HandleFunc("POST /passgate/api/login/finish", s.gate.handleLoginFinish)
-	mux.Handle("GET /static/", staticHandler())
+	// Security headers (CSP, no-store, ...) apply ONLY to passgate's own
+	// surface: the gate page, its API and its assets. Proxied responses are
+	// passed through untouched — the upstream owns its headers.
+	mux.Handle("GET /healthz", s.withSecurityHeaders(http.HandlerFunc(s.handleHealthz)))
+	mux.Handle("GET /passgate/{$}", s.withSecurityHeaders(http.HandlerFunc(s.gate.handlePage)))
+	mux.Handle("POST /passgate/api/register/begin", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleRegisterBegin)))
+	mux.Handle("POST /passgate/api/register/finish", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleRegisterFinish)))
+	mux.Handle("POST /passgate/api/login/begin", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleLoginBegin)))
+	mux.Handle("POST /passgate/api/login/finish", s.withSecurityHeaders(http.HandlerFunc(s.gate.handleLoginFinish)))
+	mux.Handle("GET /static/", s.withSecurityHeaders(staticHandler()))
 	mux.Handle("/", s.withAuth(s.proxy))
-	return s.withSecurityHeaders(mux)
+	return mux
 }
 
 // withAuth forwards requests carrying a valid session cookie to the upstream

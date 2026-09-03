@@ -15,15 +15,17 @@ ENV CGO_ENABLED=0
 WORKDIR /go/src/app
 COPY . .
 COPY --from=static /repo/web/dist web/dist
-RUN go build -trimpath -ldflags="-s -w" -o /retrogo
+RUN go build -trimpath -ldflags="-s -w" -o /passgate
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	tini \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-COPY --from=builder /retrogo /retrogo
-ENV RETROGO_LISTEN=:8080
+COPY --from=builder /passgate /passgate
+ENV PASSGATE_LISTEN=:8080
+ENV PASSGATE_DATA_DIR=/data
+VOLUME /data
 EXPOSE 8080
 ENTRYPOINT ["tini", "--"]
-CMD ["/retrogo"]
+CMD ["/passgate"]

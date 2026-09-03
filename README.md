@@ -1,25 +1,49 @@
-# retrogo
+# passgate
 
-A GitHub template that bundles multiple TypeScript entrypoints and Tailwind CSS with Bun, then serves the hashed assets through classic Go `html/template` and `net/http`.
+A single-user PassKey gate that adds authentication to any web service — first visit registers your key, every visit after requires it.
 
-Retro on the server, modern in the build:
+Many self-hosted tools ship a web UI with no authentication, leaving you to bolt on something like Caddy basic auth — which means another password to remember and a dialog most password managers won't fill. Passgate replaces that with WebAuthn: a reverse proxy that intercepts every request until a PassKey ceremony succeeds, then keeps you signed in with a JWT cookie.
 
-- **std `net/http` only** — Go 1.22+ pattern routing (`GET /{$}`, `GET /static/`, `{id}` wildcards), security headers, graceful shutdown with no deadline. No web framework, no router dependency.
-- **Bun multi-entry build** — every `.ts` / `.css` file in `web/src/entries/` is bundled by `web/build.ts` (`Bun.build`, IIFE, minified) into `web/dist/<name>-<hash>.<ext>`. `main.css` is a full Tailwind v4 build (`bun-plugin-tailwind`) with build-time lucide icons via `@iconify/tailwind4`.
-- **`html/template` views** — embedded with `//go:embed`, referencing bundles only by entry name: `{{cssAsset "main"}}`, `{{jsAsset "home"}}`. Hash resolution happens in `web_static.go`.
-- **Immutable static serving** — `web/dist` is embedded (`//go:embed all:web/dist`) and served at `GET /static/` with `Cache-Control: public, max-age=31536000, immutable`, so hashed assets are cached forever and new builds get new URLs.
+- **First visit registers** — with no credential on file, the gate page offers a one-click PassKey registration (`/passgate/`).
+- **Every visit after requires it** — once registered, the gate demands an assertion from that key. On success it sets an HttpOnly JWT cookie (HS256, default 7 days) and proxies you through.
+- **Authenticated requests are proxied** to the upstream service with `net/http/httputil` (WebSocket-friendly).
+- **Single-file state** — the credential and the JWT signing secret live in `$PASSGATE_DATA_DIR/state.json`. There is exactly one user.
 
-## Layout
+## Run
 
-| Path | Role |
-|---|---|
-| `main.go` | Flags (`-listen` / `RETROGO_LISTEN`, default `:8080`), graceful shutdown |
-| `server.go` | `http.ServeMux` with method+path patterns, security headers, page handlers |
-| `web_tmpl.go` | `//go:embed web/view/*.html`, template funcs `jsAsset` / `cssAsset` |
-| `web_static.go` | `//go:embed all:web/dist`, `<entry>-<hash>.<ext>` matching, `/static/` handler |
-| `web/build.ts` | Bun build: bundles every entry in `src/entries/` into hashed IIFEs in `dist/` |
-| `web/src/entries/` | One file per bundle: page TS entries plus `main.css` (Tailwind v4) |
-| `web/view/` | Go templates; `base.html` defines shared `head` / `nav` blocks |
+```bash
+(cd web && bun install && bun run build)
+go build .
+./passgate -upstream http://127.0.0.1:3000
+```
+
+Then open `http://localhost:8080`, register your PassKey, and you're through. WebAuthn requires a secure context: HTTPS in production, or `localhost` while developing.
+
+## Docker
+
+```bash
+docker run -p 8080:8080 -v passgate-data:/data \
+  -e PASSGATE_UPSTREAM=http://host.docker.internal:3000 \
+  ghcr.io/yankeguo/passgate
+```
+
+`.github/workflows/release.yml` builds and pushes `ghcr.io/<owner>/<repo>` via the multi-stage `Dockerfile` (`oven/bun` stage for the frontend, `golang` stage for the binary): push `main` → `latest` and `latest-<short_sha>`, push a git tag → that tag.
+
+## Configuration
+
+Every setting is an environment variable with an equivalent flag.
+
+| Env | Flag | Default | Purpose |
+|---|---|---|---|
+| `PASSGATE_LISTEN` | `-listen` | `:8080` | HTTP listen address |
+| `PASSGATE_UPSTREAM` | `-upstream` | *(required)* | Service to proxy to once authenticated, e.g. `http://127.0.0.1:3000` |
+| `PASSGATE_DATA_DIR` | `-data-dir` | `./data` | Where `state.json` (credential + signing secret) lives |
+| `PASSGATE_SESSION_TTL` | `-session-ttl` | `168h` | How long a verified session cookie stays valid |
+| `PASSGATE_ORIGIN` | `-origin` | per-request | Pin the externally visible origin (e.g. `https://gate.example.com`) |
+
+The WebAuthn RP ID and origin are derived from the request's `Host` header (honoring `X-Forwarded-Proto`), so passgate works behind a TLS-terminating reverse proxy without extra configuration; set `PASSGATE_ORIGIN` if you front it with a fixed domain and want a single canonical RP.
+
+> ⚠️ The PassKey is bound to the RP ID (the hostname). If you later serve passgate under a different hostname, the registered key won't match and you'll be locked out — delete `state.json` to re-register.
 
 ## Develop
 
@@ -28,7 +52,7 @@ Retro on the server, modern in the build:
 (cd web && bun install && bun run dev)
 
 # terminal 2: run the server
-go run .
+go run . -upstream http://127.0.0.1:3000
 ```
 
 ## Build
@@ -39,20 +63,18 @@ go test ./...
 go build .
 ```
 
-`web/dist` is git-ignored (only `.gitkeep` is committed), so always run the frontend build before `go build` — in Docker, do it in an `oven/bun` stage.
+`web/dist` is git-ignored (only `.gitkeep` is committed), so always run the frontend build before `go build` — in Docker, it happens in the `oven/bun` stage.
 
-## Release
+## Layout
 
-`.github/workflows/release.yml` builds and pushes `ghcr.io/<owner>/<repo>` via the multi-stage `Dockerfile` (`oven/bun` stage for the frontend, `golang` stage for the binary):
-
-- push `main` → `latest` and `latest-<short_sha>`
-- push a git tag → that tag
-
-Note: the bun stage mirrors the repo layout (`WORKDIR /repo/web`, `COPY *.go /repo/`) because `main.css`'s Tailwind `@source "../../../*.go"` resolves relative to the CSS file — without the Go files next to `web/`, the glob lands on the container root and the build hangs scanning the whole filesystem.
-
-## Adding a page
-
-1. Add a route in `server.go`, e.g. `mux.HandleFunc("GET /about", s.handleAbout)`.
-2. Add a view `web/view/about.html` with `{{template "head" .}}` and `<script src="{{jsAsset "about"}}" defer></script>`.
-3. Add an entry `web/src/entries/about.ts`.
-4. `bun run build` — the new `about-<hash>.js` is picked up automatically.
+| Path | Role |
+|---|---|
+| `main.go` | Flags/env config (`PASSGATE_*`), graceful shutdown |
+| `server.go` | Routing, auth middleware (JWT cookie → proxy, else redirect to gate), security headers |
+| `gate.go` | WebAuthn ceremonies: register/login begin+finish, per-origin RP instances, in-memory challenges |
+| `session.go` | HS256 JWT issue/verify, `passgate_session` cookie |
+| `store.go` | Single-user state file (`state.json`): signing secret + `webauthn.Credential`, atomic writes |
+| `proxy.go` | `httputil.ReverseProxy` to the upstream |
+| `web_tmpl.go` / `web_static.go` | Embedded templates and hashed bundles |
+| `web/src/entries/gate.ts` | Gate page logic via `@simplewebauthn/browser` |
+| `web/view/gate.html` | Gate page: register prompt (first visit) / sign-in prompt |

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>passgate</title>
+  {{template "head" .}}
+  <script src="{{jsAsset "gate"}}" defer></script>
+</head>
+<body data-registered="{{.Registered}}" data-next="{{.Next}}">
+  {{template "nav" .}}
+  <main class="mx-auto max-w-md px-4 py-12">
+    <div class="card">
+      {{if .Registered}}
+      <div class="card-header">Authentication required</div>
+      <div class="card-body">
+        <p>This service is protected by a PassKey. Verify with your registered key to continue.</p>
+        <p class="mt-4">
+          <button id="gate-action" type="button" class="btn btn-primary">
+            <span class="icon-[lucide--fingerprint]"></span> Sign in with PassKey
+          </button>
+        </p>
+      </div>
+      {{else}}
+      <div class="card-header">First-time setup</div>
+      <div class="card-body">
+        <p>No PassKey has been registered for this service yet. Register one now — it will be required on every future visit.</p>
+        <p class="mt-4">
+          <button id="gate-action" type="button" class="btn btn-primary">
+            <span class="icon-[lucide--key-round]"></span> Register a PassKey
+          </button>
+        </p>
+      </div>
+      {{end}}
+    </div>
+    <p id="gate-status" class="mt-4 hidden text-sm text-red-400"></p>
+  </main>
+</body>
+</html>

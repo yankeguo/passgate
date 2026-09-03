@@ -41,11 +41,13 @@ func main() {
 	}
 
 	gate := NewGate(store, sessionTTL, origin)
+	// No server-side timeouts: the gate must be a transparent proxy, so
+	// slow requests and long-lived connections (SSE, WebSocket, big
+	// uploads) are never cut short here. Timeout policy is left to the
+	// client and the upstream.
 	srv := &http.Server{
-		Addr:              listen,
-		Handler:           NewServer(gate, newProxy(upstreamURL)).Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		Addr:    listen,
+		Handler: NewServer(gate, newProxy(upstreamURL)).Handler(),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

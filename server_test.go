@@ -98,6 +98,13 @@ func TestAuthenticatedRequestIsProxied(t *testing.T) {
 	if string(body) != "upstream:/app/dashboard" {
 		t.Fatalf("body = %q, want proxied upstream response", body)
 	}
+	// Proxied responses must be passed through untouched: no passgate
+	// security headers (CSP, no-store, ...) may leak onto them.
+	for _, h := range []string{"Content-Security-Policy", "Cache-Control", "X-Frame-Options"} {
+		if v := resp.Header.Get(h); v != "" {
+			t.Fatalf("proxied response carries passgate header %s: %q", h, v)
+		}
+	}
 }
 
 func contains(s, sub string) bool {

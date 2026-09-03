@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,10 +20,12 @@ type Gate struct {
 	sessionTTL time.Duration
 	origin     string // optional pinned origin (PASSGATE_ORIGIN)
 
-	mu        sync.Mutex
-	webauthns map[string]*webauthn.WebAuthn // origin → RP instance
-	sessions  map[string]*challengeSession  // challenge → in-flight ceremony
+	mu       sync.Mutex
+	sessions map[string]*challengeSession // challenge → in-flight ceremony
 }
+
+// challengeTTL bounds how long a begun WebAuthn ceremony stays completable.
+const challengeTTL = 5 * time.Minute
 
 type challengeSession struct {
 	data    webauthn.SessionData
@@ -34,7 +37,6 @@ func NewGate(store *Store, sessionTTL time.Duration, origin string) *Gate {
 		store:      store,
 		sessionTTL: sessionTTL,
 		origin:     origin,
-		webauthns:  make(map[string]*webauthn.WebAuthn),
 		sessions:   make(map[string]*challengeSession),
 	}
 }
@@ -43,7 +45,7 @@ func NewGate(store *Store, sessionTTL time.Duration, origin string) *Gate {
 // honoring X-Forwarded-Proto when deployed behind a TLS-terminating proxy.
 func requestOrigin(r *http.Request) string {
 	scheme := r.Header.Get("X-Forwarded-Proto")
-	if scheme == "" {
+	if scheme != "https" && scheme != "http" {
 		if r.TLS != nil {
 			scheme = "https"
 		} else {
@@ -53,43 +55,36 @@ func requestOrigin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func (g *Gate) webauthnFor(origin string) (*webauthn.WebAuthn, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if w, ok := g.webauthns[origin]; ok {
-		return w, nil
+// webauthnFor builds the RP (relying party) instance for the request's
+// origin. webauthn.New is cheap config validation, so instances are created
+// per call rather than cached — a cache keyed on the client-controlled Host
+// header would grow without bound.
+func (g *Gate) webauthnFor(r *http.Request) (*webauthn.WebAuthn, error) {
+	origin := g.origin
+	if origin == "" {
+		origin = requestOrigin(r)
 	}
 	u, err := url.Parse(origin)
 	if err != nil {
 		return nil, err
 	}
-	w, err := webauthn.New(&webauthn.Config{
+	return webauthn.New(&webauthn.Config{
 		RPID:          u.Hostname(),
 		RPDisplayName: "Passgate",
 		RPOrigins:     []string{origin},
 	})
-	if err != nil {
-		return nil, err
-	}
-	g.webauthns[origin] = w
-	return w, nil
-}
-
-func (g *Gate) rp(r *http.Request) (*webauthn.WebAuthn, error) {
-	if g.origin != "" {
-		return g.webauthnFor(g.origin)
-	}
-	return g.webauthnFor(requestOrigin(r))
 }
 
 func (g *Gate) isSecure(r *http.Request) bool {
-	if g.origin != "" {
-		return len(g.origin) >= 6 && g.origin[:6] == "https:"
+	origin := g.origin
+	if origin == "" {
+		origin = requestOrigin(r)
 	}
-	return requestOrigin(r)[:6] == "https:"
+	return strings.HasPrefix(origin, "https:")
 }
 
-func (g *Gate) stash(data webauthn.SessionData) {
+// saveChallenge stashes a begun ceremony, sweeping expired ones in passing.
+func (g *Gate) saveChallenge(data webauthn.SessionData) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	now := time.Now()
@@ -98,10 +93,11 @@ func (g *Gate) stash(data webauthn.SessionData) {
 			delete(g.sessions, k)
 		}
 	}
-	g.sessions[data.Challenge] = &challengeSession{data: data, expires: now.Add(5 * time.Minute)}
+	g.sessions[data.Challenge] = &challengeSession{data: data, expires: now.Add(challengeTTL)}
 }
 
-func (g *Gate) take(challenge string) (webauthn.SessionData, bool) {
+// takeChallenge consumes a stashed ceremony: each challenge completes once.
+func (g *Gate) takeChallenge(challenge string) (webauthn.SessionData, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	s, ok := g.sessions[challenge]
@@ -123,9 +119,11 @@ func (g *Gate) handlePage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// sanitizeNext keeps only site-local redirect targets.
+// sanitizeNext keeps only site-local redirect targets. "//evil.com" is
+// rejected as protocol-relative; "/\evil.com" is rejected because browsers
+// normalize the backslash to a slash, again yielding "//evil.com".
 func sanitizeNext(next string) string {
-	if len(next) > 1 && next[0] == '/' && next[1] != '/' {
+	if len(next) > 1 && next[0] == '/' && next[1] != '/' && next[1] != '\\' {
 		return next
 	}
 	return "/"
@@ -136,17 +134,17 @@ func (g *Gate) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "a passkey is already registered")
 		return
 	}
-	rp, err := g.rp(r)
+	rp, err := g.webauthnFor(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	creation, session, err := rp.BeginRegistration(&user{store: g.store})
+	creation, session, err := rp.BeginRegistration(&owner{store: g.store})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	g.stash(*session)
+	g.saveChallenge(*session)
 	writeJSON(w, creation)
 }
 
@@ -155,7 +153,7 @@ func (g *Gate) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "a passkey is already registered")
 		return
 	}
-	rp, err := g.rp(r)
+	rp, err := g.webauthnFor(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -165,18 +163,18 @@ func (g *Gate) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	session, ok := g.take(parsed.Response.CollectedClientData.Challenge)
+	session, ok := g.takeChallenge(parsed.Response.CollectedClientData.Challenge)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unknown or expired ceremony")
 		return
 	}
-	cred, err := rp.CreateCredential(&user{store: g.store}, session, parsed)
+	cred, err := rp.CreateCredential(&owner{store: g.store}, session, parsed)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	if err := g.store.SetCredential(cred); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	g.issueSession(w, r)
@@ -187,17 +185,17 @@ func (g *Gate) handleLoginBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "no passkey registered yet")
 		return
 	}
-	rp, err := g.rp(r)
+	rp, err := g.webauthnFor(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	assertion, session, err := rp.BeginLogin(&user{store: g.store})
+	assertion, session, err := rp.BeginLogin(&owner{store: g.store})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	g.stash(*session)
+	g.saveChallenge(*session)
 	writeJSON(w, assertion)
 }
 
@@ -206,7 +204,7 @@ func (g *Gate) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "no passkey registered yet")
 		return
 	}
-	rp, err := g.rp(r)
+	rp, err := g.webauthnFor(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -216,12 +214,12 @@ func (g *Gate) handleLoginFinish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	session, ok := g.take(parsed.Response.CollectedClientData.Challenge)
+	session, ok := g.takeChallenge(parsed.Response.CollectedClientData.Challenge)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unknown or expired ceremony")
 		return
 	}
-	if _, err := rp.ValidateLogin(&user{store: g.store}, session, parsed); err != nil {
+	if _, err := rp.ValidateLogin(&owner{store: g.store}, session, parsed); err != nil {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}

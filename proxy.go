@@ -27,11 +27,11 @@ func newProxy(upstream *url.URL) http.Handler {
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: (&net.Dialer{
-				Timeout:   0, // no connect timeout
+				Timeout:   0,  // no connect timeout
 				KeepAlive: -1, // disable keep-alive probes; dead peers surface on their own
 			}).DialContext,
 			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          1 << 30, // effectively unlimited idle pool
+			MaxIdleConns:          0,       // 0 = no limit on the idle pool
 			MaxIdleConnsPerHost:   1 << 30, // default would cap reuse at 2 per host
 			MaxConnsPerHost:       0,       // no concurrency cap
 			IdleConnTimeout:       0,       // idle connections never expire

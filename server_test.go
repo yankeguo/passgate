@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -71,7 +72,7 @@ func TestGatePageAndHealthz(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("gate page status = %d", resp.StatusCode)
 	}
-	if got := string(body); !contains(got, "Register a PassKey") {
+	if got := string(body); !strings.Contains(got, "Register a PassKey") {
 		t.Fatal("first-visit gate page should offer registration")
 	}
 }
@@ -105,13 +106,4 @@ func TestAuthenticatedRequestIsProxied(t *testing.T) {
 			t.Fatalf("proxied response carries passgate header %s: %q", h, v)
 		}
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

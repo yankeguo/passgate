@@ -24,7 +24,7 @@ type Store struct {
 }
 
 type storeFile struct {
-	Secret     []byte              `json:"secret"`
+	Secret     []byte               `json:"secret"`
 	Credential *webauthn.Credential `json:"credential,omitempty"`
 }
 
@@ -89,26 +89,31 @@ func (s *Store) Credential() *webauthn.Credential {
 	return s.credential
 }
 
-// SetCredential registers the PassKey credential and persists it.
+// SetCredential registers the PassKey credential and persists it. It refuses
+// to overwrite an existing credential, closing the race between the "not yet
+// registered" check in the gate handlers and the write here.
 func (s *Store) SetCredential(c *webauthn.Credential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.credential != nil {
+		return errors.New("a passkey is already registered")
+	}
 	s.credential = c
 	return s.saveLocked()
 }
 
-// user adapts the store to webauthn.User for the single gate owner.
-type user struct {
+// owner adapts the store to webauthn.User for the single gate owner.
+type owner struct {
 	store *Store
 }
 
-var userHandle = []byte("passgate-owner")
+var ownerHandle = []byte("passgate-owner")
 
-func (u *user) WebAuthnID() []byte          { return userHandle }
-func (u *user) WebAuthnName() string        { return "owner" }
-func (u *user) WebAuthnDisplayName() string { return "Owner" }
+func (u *owner) WebAuthnID() []byte          { return ownerHandle }
+func (u *owner) WebAuthnName() string        { return "owner" }
+func (u *owner) WebAuthnDisplayName() string { return "Owner" }
 
-func (u *user) WebAuthnCredentials() []webauthn.Credential {
+func (u *owner) WebAuthnCredentials() []webauthn.Credential {
 	if c := u.store.Credential(); c != nil {
 		return []webauthn.Credential{*c}
 	}

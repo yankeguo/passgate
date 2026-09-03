@@ -37,7 +37,7 @@ func main() {
 
 	store, err := OpenStore(dataDir)
 	if err != nil {
-		log.Fatal("open store:", err)
+		log.Fatalf("open store: %v", err)
 	}
 
 	gate := NewGate(store, sessionTTL, origin)

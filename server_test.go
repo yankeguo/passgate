@@ -12,6 +12,11 @@ import (
 
 func testServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
+	return testServerWithTitle(t, "")
+}
+
+func testServerWithTitle(t *testing.T, title string) (*httptest.Server, string) {
+	t.Helper()
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("upstream:" + r.URL.Path))
@@ -26,7 +31,7 @@ func testServer(t *testing.T) (*httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate(store, time.Hour, "")
+	gate := NewGate(store, time.Hour, "", title)
 	srv := httptest.NewServer(NewServer(gate, newProxy(upstreamURL)).Handler())
 	t.Cleanup(srv.Close)
 	return srv, string(store.Secret())
@@ -74,6 +79,27 @@ func TestGatePageAndHealthz(t *testing.T) {
 	}
 	if got := string(body); !strings.Contains(got, "Register a PassKey") {
 		t.Fatal("first-visit gate page should offer registration")
+	}
+	if got := string(body); !strings.Contains(got, "<title>passgate</title>") {
+		t.Fatal("gate page should use the default title")
+	}
+}
+
+func TestGatePageCustomTitle(t *testing.T) {
+	srv, _ := testServerWithTitle(t, "Photos & albums")
+
+	resp, err := http.Get(srv.URL + "/__passgate/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	got := string(body)
+	if !strings.Contains(got, "<title>Photos &amp; albums</title>") {
+		t.Fatal("browser tab title should follow PASSGATE_TITLE")
+	}
+	if !strings.Contains(got, "> Photos &amp; albums</a>") {
+		t.Fatal("header should follow PASSGATE_TITLE")
 	}
 }
 

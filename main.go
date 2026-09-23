@@ -19,12 +19,14 @@ func main() {
 	dataDir := envOr("PASSGATE_DATA_DIR", "./data")
 	sessionTTL := durationEnvOr("PASSGATE_SESSION_TTL", 168*time.Hour)
 	origin := envOr("PASSGATE_ORIGIN", "")
+	title := envOr("PASSGATE_TITLE", defaultTitle)
 
 	flag.StringVar(&listen, "listen", listen, "http listen address")
 	flag.StringVar(&upstream, "upstream", upstream, "upstream service URL to proxy to (required)")
 	flag.StringVar(&dataDir, "data-dir", dataDir, "directory for gate state (credential, signing secret)")
 	flag.DurationVar(&sessionTTL, "session-ttl", sessionTTL, "how long a successful passkey verification stays valid")
 	flag.StringVar(&origin, "origin", origin, "pin the externally visible origin (e.g. https://gate.example.com); derived per request if empty")
+	flag.StringVar(&title, "title", title, "gate page title shown in the browser tab and header")
 	flag.Parse()
 
 	if upstream == "" {
@@ -40,7 +42,7 @@ func main() {
 		log.Fatalf("open store: %v", err)
 	}
 
-	gate := NewGate(store, sessionTTL, origin)
+	gate := NewGate(store, sessionTTL, origin, title)
 	// No server-side timeouts: the gate must be a transparent proxy, so
 	// slow requests and long-lived connections (SSE, WebSocket, big
 	// uploads) are never cut short here. Timeout policy is left to the

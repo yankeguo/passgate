@@ -13,12 +13,16 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
+// defaultTitle is the gate page title when none is configured.
+const defaultTitle = "passgate"
+
 // Gate implements the PassKey gate: registration on first visit, assertion
 // afterwards, and a JWT session cookie on success.
 type Gate struct {
 	store      *Store
 	sessionTTL time.Duration
 	origin     string // optional pinned origin (PASSGATE_ORIGIN)
+	title      string // page title (browser tab and header)
 
 	mu       sync.Mutex
 	sessions map[string]*challengeSession // challenge → in-flight ceremony
@@ -32,11 +36,15 @@ type challengeSession struct {
 	expires time.Time
 }
 
-func NewGate(store *Store, sessionTTL time.Duration, origin string) *Gate {
+func NewGate(store *Store, sessionTTL time.Duration, origin, title string) *Gate {
+	if title == "" {
+		title = defaultTitle
+	}
 	return &Gate{
 		store:      store,
 		sessionTTL: sessionTTL,
 		origin:     origin,
+		title:      title,
 		sessions:   make(map[string]*challengeSession),
 	}
 }
@@ -116,6 +124,7 @@ func (g *Gate) handlePage(w http.ResponseWriter, r *http.Request) {
 	render(w, "gate.html", map[string]any{
 		"Registered": g.store.Credential() != nil,
 		"Next":       sanitizeNext(r.URL.Query().Get("next")),
+		"Title":      g.title,
 	})
 }
 

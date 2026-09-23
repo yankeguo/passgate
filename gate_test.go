@@ -54,13 +54,13 @@ func TestIsSecure(t *testing.T) {
 	r := httptest.NewRequest("GET", "http://gate.example/", nil)
 	r.Header.Set("X-Forwarded-Proto", "https")
 
-	if NewGate(store, time.Hour, "").isSecure(r) != true {
+	if NewGate(store, time.Hour, "", "").isSecure(r) != true {
 		t.Fatal("forwarded https should be secure")
 	}
-	if NewGate(store, time.Hour, "https://gate.example.com").isSecure(r) != true {
+	if NewGate(store, time.Hour, "https://gate.example.com", "").isSecure(r) != true {
 		t.Fatal("pinned https origin should be secure")
 	}
-	if NewGate(store, time.Hour, "http://gate.example.com").isSecure(r) != false {
+	if NewGate(store, time.Hour, "http://gate.example.com", "").isSecure(r) != false {
 		t.Fatal("pinned http origin should not be secure")
 	}
 }
@@ -70,7 +70,7 @@ func TestChallengeLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := NewGate(store, time.Hour, "")
+	g := NewGate(store, time.Hour, "", "")
 
 	data := webauthn.SessionData{Challenge: "c1"}
 	g.saveChallenge(data)

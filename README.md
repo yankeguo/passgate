@@ -40,6 +40,7 @@ Every setting is an environment variable with an equivalent flag.
 | `PASSGATE_DATA_DIR` | `-data-dir` | `./data` | Where `state.json` (credential + signing secret) lives |
 | `PASSGATE_SESSION_TTL` | `-session-ttl` | `168h` | How long a verified session cookie stays valid |
 | `PASSGATE_ORIGIN` | `-origin` | per-request | Pin the externally visible origin (e.g. `https://gate.example.com`) |
+| `PASSGATE_TITLE` | `-title` | `passgate` | Gate page title, shown in the browser tab and the header |
 
 The WebAuthn RP ID and origin are derived from the request's `Host` header (honoring `X-Forwarded-Proto`), so passgate works behind a TLS-terminating reverse proxy without extra configuration; set `PASSGATE_ORIGIN` if you front it with a fixed domain and want a single canonical RP.
 

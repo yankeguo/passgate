@@ -28,7 +28,16 @@ docker run -p 8080:8080 -v passgate-data:/data \
   ghcr.io/yankeguo/passgate
 ```
 
-`.github/workflows/release.yml` builds and pushes `ghcr.io/<owner>/<repo>` via the multi-stage `Dockerfile` (`oven/bun` stage for the frontend, `golang` stage for the binary): push `main` → `latest` and `latest-<short_sha>`, push a git tag → that tag.
+`.github/workflows/ci.yml` typechecks and builds the frontend, then runs `go test` and `go build`, on every pull request. `.github/workflows/release.yml` runs those checks and then publishes `ghcr.io/<owner>/<repo>` from the multi-stage `Dockerfile` (`oven/bun` stage for the frontend, `golang` stage for the binary):
+
+| Push | Image tags |
+|---|---|
+| `main` | `latest` |
+| `v1.2.3` | `1.2.3`, `1.2`, `1` |
+| `v1.2.3-rc.1` | `1.2.3-rc.1` |
+| `v0.1.2` | `0.1.2`, `0.1` |
+
+`latest` tracks `main` only. Pre-releases do not move the major or minor tags, and `0.y.z` does not publish a floating `0` tag.
 
 ## Configuration
 
@@ -80,3 +89,5 @@ go build .
 | `web_tmpl.go` / `web_static.go` | Embedded templates and hashed bundles |
 | `web/src/entries/gate.ts` | Gate page logic via `@simplewebauthn/browser` |
 | `web/view/gate.html` | Gate page: setup key + register prompt (first visit) / sign-in prompt |
+| `.github/workflows/ci.yml` | Pull request checks: frontend typecheck/build, `go test`, `go build` |
+| `.github/workflows/release.yml` | Publish the image after CI: `main` → `latest`; semver tag → version tags |

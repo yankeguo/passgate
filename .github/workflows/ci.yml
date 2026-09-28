@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup-go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: setup-bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Same major line as the oven/bun:1 image in the Dockerfile.
+          bun-version: "1.x"
+
+      - name: install-frontend
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: typecheck
+        working-directory: web
+        run: bun run typecheck
+
+      - name: build-frontend
+        working-directory: web
+        run: bun run build
+
+      - name: test
+        run: go test -race ./...
+
+      - name: build
+        run: go build -o /dev/null .

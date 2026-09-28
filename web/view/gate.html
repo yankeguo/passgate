@@ -24,7 +24,9 @@
       {{else}}
       <div class="card-header">First-time setup</div>
       <div class="card-body">
-        <p>No PassKey has been registered for this service yet. Register one now — it will be required on every future visit.</p>
+        <p>No PassKey has been registered for this service yet. Enter the setup key printed in the server terminal, then register a PassKey. It will be required on every future visit.</p>
+        <label for="setup-key" class="mt-4 block text-sm font-medium">Setup key</label>
+        <input id="setup-key" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="80" class="input mt-1 font-mono" placeholder="xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx">
         <p class="mt-4">
           <button id="gate-action" type="button" class="btn btn-primary">
             <span class="icon-[lucide--key-round]"></span> Register a PassKey

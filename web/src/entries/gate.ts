@@ -8,6 +8,9 @@ const next = body.dataset.next || '/'
 
 const button = document.querySelector<HTMLButtonElement>('#gate-action')
 const status = document.querySelector<HTMLElement>('#gate-status')
+const setupKeyInput = document.querySelector<HTMLInputElement>('#setup-key')
+
+const setupKeyHeader = 'X-Passgate-Setup-Key'
 
 function showError(message: string) {
   if (status) {
@@ -16,10 +19,12 @@ function showError(message: string) {
   }
 }
 
-async function post(url: string, payload?: unknown): Promise<Response> {
+async function post(url: string, payload?: unknown, extraHeaders?: Record<string, string>): Promise<Response> {
+  const headers: Record<string, string> = { ...extraHeaders }
+  if (payload !== undefined) headers['Content-Type'] = 'application/json'
   const resp = await fetch(url, {
     method: 'POST',
-    headers: payload === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers: Object.keys(headers).length ? headers : undefined,
     body: payload === undefined ? undefined : JSON.stringify(payload),
   })
   if (!resp.ok) {
@@ -41,12 +46,24 @@ async function run() {
     const assertion = await startAuthentication({ optionsJSON: begin.publicKey })
     await post('/__passgate/api/login/finish', assertion)
   } else {
-    const begin = await (await post('/__passgate/api/register/begin')).json()
+    const key = setupKeyInput?.value.trim() ?? ''
+    if (!key) {
+      throw new Error('Enter the setup key printed in the server terminal')
+    }
+    const headers = { [setupKeyHeader]: key }
+    const begin = await (await post('/__passgate/api/register/begin', undefined, headers)).json()
     const attestation = await startRegistration({ optionsJSON: begin.publicKey })
-    await post('/__passgate/api/register/finish', attestation)
+    await post('/__passgate/api/register/finish', attestation, headers)
   }
   window.location.href = next
 }
+
+setupKeyInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    button?.click()
+  }
+})
 
 button?.addEventListener('click', async () => {
   button.disabled = true

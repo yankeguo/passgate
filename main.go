@@ -42,7 +42,13 @@ func main() {
 		log.Fatalf("open store: %v", err)
 	}
 
-	gate := NewGate(store, sessionTTL, origin, title)
+	gate, err := NewGate(store, sessionTTL, origin, title)
+	if err != nil {
+		log.Fatalf("gate: %v", err)
+	}
+	if key := gate.SetupKey(); key != "" {
+		log.Printf("no passkey registered; enter this setup key to register the first one:\n%s", formatSetupKey(key))
+	}
 	// No server-side timeouts: the gate must be a transparent proxy, so
 	// slow requests and long-lived connections (SSE, WebSocket, big
 	// uploads) are never cut short here. Timeout policy is left to the

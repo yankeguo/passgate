@@ -1,7 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -16,8 +21,19 @@ import (
 // defaultTitle is the gate page title when none is configured.
 const defaultTitle = "passgate"
 
+// setupKeyHeader carries the in-memory bootstrap key on first registration.
+// A custom header cannot be set by a cross-origin form post.
+const setupKeyHeader = "X-Passgate-Setup-Key"
+
+// setupKeyBytes is the entropy of the bootstrap key (128 bits).
+const setupKeyBytes = 16
+
 // Gate implements the PassKey gate: registration on first visit, assertion
 // afterwards, and a JWT session cookie on success.
+//
+// Until a passkey exists, startup also keeps a random setup key in memory.
+// Registration is refused without it, so a reachable gate cannot be claimed
+// by whoever loads the page first.
 type Gate struct {
 	store      *Store
 	sessionTTL time.Duration
@@ -25,6 +41,7 @@ type Gate struct {
 	title      string // page title (browser tab and header)
 
 	mu       sync.Mutex
+	setupKey string                       // canonical hex; empty once a passkey exists
 	sessions map[string]*challengeSession // challenge → in-flight ceremony
 }
 
@@ -36,17 +53,94 @@ type challengeSession struct {
 	expires time.Time
 }
 
-func NewGate(store *Store, sessionTTL time.Duration, origin, title string) *Gate {
+func NewGate(store *Store, sessionTTL time.Duration, origin, title string) (*Gate, error) {
 	if title == "" {
 		title = defaultTitle
 	}
-	return &Gate{
+	g := &Gate{
 		store:      store,
 		sessionTTL: sessionTTL,
 		origin:     origin,
 		title:      title,
 		sessions:   make(map[string]*challengeSession),
 	}
+	if store.Credential() == nil {
+		key, err := newSetupKey()
+		if err != nil {
+			return nil, fmt.Errorf("generate setup key: %w", err)
+		}
+		g.setupKey = key
+	}
+	return g, nil
+}
+
+// SetupKey returns the canonical (unhyphenated, lowercase hex) bootstrap key,
+// or "" when a passkey is already registered. The key is never persisted.
+func (g *Gate) SetupKey() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.setupKey
+}
+
+func (g *Gate) clearSetupKey() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.setupKey = ""
+}
+
+// newSetupKey returns 128 bits of randomness as lowercase hex.
+func newSetupKey() (string, error) {
+	buf := make([]byte, setupKeyBytes)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+// formatSetupKey groups a canonical key as xxxx-xxxx-... for the terminal.
+func formatSetupKey(key string) string {
+	var b strings.Builder
+	for i := 0; i < len(key); i += 4 {
+		if i > 0 {
+			b.WriteByte('-')
+		}
+		end := i + 4
+		if end > len(key) {
+			end = len(key)
+		}
+		b.WriteString(key[i:end])
+	}
+	return b.String()
+}
+
+func normalizeSetupKey(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "-", "")
+	s = strings.ReplaceAll(s, " ", "")
+	return strings.ToLower(s)
+}
+
+// setupKeysEqual compares a typed key with the canonical one. Digests are
+// compared so a length mismatch cannot short-circuit on the secret.
+func setupKeysEqual(got, want string) bool {
+	if want == "" || strings.TrimSpace(got) == "" {
+		return false
+	}
+	gh := sha256.Sum256([]byte(normalizeSetupKey(got)))
+	wh := sha256.Sum256([]byte(normalizeSetupKey(want)))
+	return subtle.ConstantTimeCompare(gh[:], wh[:]) == 1
+}
+
+// setupKeyOK reports whether the request presents the in-memory bootstrap key.
+func (g *Gate) setupKeyOK(r *http.Request) bool {
+	got := r.Header.Get(setupKeyHeader)
+	if len(got) > 128 {
+		return false
+	}
+	g.mu.Lock()
+	want := g.setupKey
+	g.mu.Unlock()
+	return setupKeysEqual(got, want)
 }
 
 // requestOrigin derives the externally visible origin of the request,
@@ -143,6 +237,10 @@ func (g *Gate) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "a passkey is already registered")
 		return
 	}
+	if !g.setupKeyOK(r) {
+		writeError(w, http.StatusUnauthorized, "invalid setup key")
+		return
+	}
 	rp, err := g.webauthnFor(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -160,6 +258,10 @@ func (g *Gate) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 func (g *Gate) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	if g.store.Credential() != nil {
 		writeError(w, http.StatusConflict, "a passkey is already registered")
+		return
+	}
+	if !g.setupKeyOK(r) {
+		writeError(w, http.StatusUnauthorized, "invalid setup key")
 		return
 	}
 	rp, err := g.webauthnFor(r)
@@ -186,6 +288,7 @@ func (g *Gate) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	g.clearSetupKey()
 	g.issueSession(w, r)
 }
 

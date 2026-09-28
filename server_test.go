@@ -31,7 +31,7 @@ func testServerWithTitle(t *testing.T, title string) (*httptest.Server, string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate(store, time.Hour, "", title)
+	gate := newTestGate(t, store, "", title)
 	srv := httptest.NewServer(NewServer(gate, newProxy(upstreamURL)).Handler())
 	t.Cleanup(srv.Close)
 	return srv, string(store.Secret())

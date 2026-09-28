@@ -4,7 +4,8 @@ A single-user PassKey gate that adds authentication to any web service — first
 
 Many self-hosted tools ship a web UI with no authentication, leaving you to bolt on something like Caddy basic auth — which means another password to remember and a dialog most password managers won't fill. Passgate replaces that with WebAuthn: a reverse proxy that intercepts every request until a PassKey ceremony succeeds, then keeps you signed in with a JWT cookie.
 
-- **First visit registers** — with no credential on file, the gate page offers a one-click PassKey registration (`/__passgate/`). All of passgate's own paths (gate page, API, assets, health check) live under the `/__passgate/` prefix so nothing collides with the upstream's routes.
+- **First visit registers** — with no credential on file, the gate page (`/__passgate/`) registers a PassKey, but only after you enter the setup key printed at startup. All of passgate's own paths (gate page, API, assets, health check) live under the `/__passgate/` prefix so nothing collides with the upstream's routes.
+- **Setup key is memory-only** — until a passkey exists, each start generates a new 128-bit key, prints it to the terminal, and never writes it to disk. `POST /__passgate/api/register/begin` and `.../finish` reject requests that omit the matching `X-Passgate-Setup-Key` header. The key is wiped once registration succeeds, and later starts do not print one.
 - **Every visit after requires it** — once registered, the gate demands an assertion from that key. On success it sets an HttpOnly JWT cookie (HS256, default 7 days) and proxies you through.
 - **Authenticated requests are proxied** to the upstream service with `net/http/httputil` (WebSocket-friendly).
 - **Single-file state** — the credential and the JWT signing secret live in `$PASSGATE_DATA_DIR/state.json`. There is exactly one user.
@@ -17,7 +18,7 @@ go build .
 ./passgate -upstream http://127.0.0.1:3000
 ```
 
-Then open `http://localhost:8080`, register your PassKey, and you're through. WebAuthn requires a secure context: HTTPS in production, or `localhost` while developing.
+Then open `http://localhost:8080`. If no passkey is registered yet, the terminal prints a setup key — enter it on the gate page, register your PassKey, and you're through. WebAuthn requires a secure context: HTTPS in production, or `localhost` while developing. Restarting before that registration prints a new key.
 
 ## Docker
 
@@ -72,10 +73,10 @@ go build .
 |---|---|
 | `main.go` | Flags/env config (`PASSGATE_*`), graceful shutdown |
 | `server.go` | Routing, auth middleware (JWT cookie → proxy, else redirect to gate), security headers |
-| `gate.go` | WebAuthn ceremonies: register/login begin+finish, RP derived per request origin, in-memory challenges (5 min TTL, single-use) |
+| `gate.go` | WebAuthn ceremonies: register/login begin+finish, in-memory setup key for first registration, RP derived per request origin, in-memory challenges (5 min TTL, single-use) |
 | `session.go` | HS256 JWT issue/verify, `passgate_session` cookie |
 | `store.go` | Single-user state file (`state.json`): signing secret + `webauthn.Credential`, atomic writes, one-time registration |
 | `proxy.go` | `httputil.ReverseProxy` to the upstream |
 | `web_tmpl.go` / `web_static.go` | Embedded templates and hashed bundles |
 | `web/src/entries/gate.ts` | Gate page logic via `@simplewebauthn/browser` |
-| `web/view/gate.html` | Gate page: register prompt (first visit) / sign-in prompt |
+| `web/view/gate.html` | Gate page: setup key + register prompt (first visit) / sign-in prompt |

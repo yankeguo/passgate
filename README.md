@@ -28,7 +28,7 @@ docker run -p 8080:8080 -v passgate-data:/data \
   ghcr.io/yankeguo/passgate
 ```
 
-`.github/workflows/ci.yml` typechecks and builds the frontend, then runs `go test` and `go build`, on every pull request. `.github/workflows/release.yml` runs those checks and then publishes `ghcr.io/<owner>/<repo>` from the multi-stage `Dockerfile` (`oven/bun` stage for the frontend, `golang` stage for the binary):
+`.github/workflows/ci.yml` typechecks and builds the frontend, then runs `go test` and `go build`, on every pull request. `.github/workflows/release.yml` runs those checks and then publishes multi-arch (`linux/amd64`, `linux/arm64`) `ghcr.io/<owner>/<repo>` images from the multi-stage `Dockerfile` (`oven/bun` stage for the frontend, `golang` stage for the binary):
 
 | Push | Image tags |
 |---|---|

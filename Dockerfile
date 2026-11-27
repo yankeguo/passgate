@@ -17,11 +17,10 @@ COPY . .
 COPY --from=static /repo/web/dist web/dist
 RUN go build -trimpath -ldflags="-s -w" -o /passgate
 
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
+FROM alpine:3.24
+RUN apk add --no-cache \
 	tini \
-	ca-certificates \
-	&& rm -rf /var/lib/apt/lists/*
+	ca-certificates
 COPY --from=builder /passgate /passgate
 ENV PASSGATE_LISTEN=:8080
 ENV PASSGATE_DATA_DIR=/data
